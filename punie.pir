@@ -42,9 +42,9 @@ tree transformations using the Parrot compiler toolkit.
     .tailcall $P0.'command_line'(args)
 .end
 
-.include 'src/builtins/builtins.pir'
-.include 'src/gen_punie.pir'
-.include 'src/gen_punie-actions.pir'
+.include 'src/gen_builtins.pir'
+.include 'src/gen_grammar.pir'
+.include 'src/gen_actions.pir'
 
 =head1 LICENSE
 

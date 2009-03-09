@@ -1,46 +1,114 @@
 # Copyright (C) 2005-2009, Parrot Foundation.
 # $Id: root.in 36833 2009-02-17 20:09:26Z allison $
 
-# Setup some commands
-LN_S     = @lns@
-PERL     = @perl@
-RM_F     = @rm_f@
-PARROT   = ../../parrot@exe@
-BUILD_DIR     = @build_dir@
-RECONFIGURE   = $(PERL) @build_dir@/tools/dev/reconfigure.pl
-PGE_DIR       = ../../compilers/pge
-NQP_DIR       = ../../compilers/nqp
-CP       = @cp@
-#CONDITIONED_LINE(darwin):
-#CONDITIONED_LINE(darwin):# MACOSX_DEPLOYMENT_TARGET must be defined for OS X compilation/linking
-#CONDITIONED_LINE(darwin):export MACOSX_DEPLOYMENT_TARGET := @osx_version@
+## arguments we want to run parrot with
+PARROT_ARGS   :=
 
-PARROT_LIBRARY = ../../runtime/parrot/library
-PGE_LIBRARY   = ../../runtime/parrot/library/PGE
+## configuration settings
+VERSION       := @versiondir@
+BIN_DIR       := @bin_dir@
+LIB_DIR       := @lib_dir@$(VERSION)
+DOC_DIR       := @doc_dir@$(VERSION)
+MANDIR        := @mandir@$(VERSION)
 
-# the default target
-all: punie.pbc
+# Set up extensions
+LOAD_EXT      := @load_ext@
+O             := @o@
 
-SOURCES = punie.pir \
-  src/parser/grammar.pg \
-  src/parser/actions.pm \
-  src/builtins/builtins.pir \
+# Various paths
+PERL6GRAMMAR  := $(LIB_DIR)/library/PGE/Perl6Grammar.pbc
+NQP           := $(LIB_DIR)/languages/nqp/nqp.pbc
+PCT           := $(LIB_DIR)/library/PCT.pbc
 
-# the default target
-punie.pbc: $(PARROT) $(NQP_DIR)/nqp.pbc $(PGE_LIBRARY)/Perl6Grammar.pir $(SOURCES)
-	$(PARROT) $(PGE_LIBRARY)/Perl6Grammar.pir --output=src/gen_punie.pir src/parser/grammar.pg
-	$(PARROT) $(NQP_DIR)/nqp.pbc --target=pir --output=src/gen_punie-actions.pir src/parser/actions.pm
-	$(PARROT) -o punie.pbc punie.pir
+## Setup some commands
+MAKE          := @make_c@
+PERL          := @perl@
+CAT           := @cat@
+CHMOD         := @chmod@
+CP            := @cp@
+MKPATH        := @mkpath@
+RM_F          := @rm_f@
+RM_RF         := @rm_rf@
+POD2MAN       := pod2man
+#IF(parrot_is_shared and not(cygwin or win32)):export LD_RUN_PATH := @blib_dir@:$(LD_RUN_PATH)
+PARROT        := $(BIN_DIR)/parrot@exe@
+PBC_TO_EXE    := $(BIN_DIR)/pbc_to_exe@exe@
+#IF(darwin):
+#IF(darwin):# MACOSX_DEPLOYMENT_TARGET must be defined for OS X compilation/linking
+#IF(darwin):export MACOSX_DEPLOYMENT_TARGET := @osx_version@
+
+SOURCES := \
+  src/gen_grammar.pir \
+  src/gen_actions.pir \
+  src/gen_builtins.pir \
+  punie.pir
+
+BUILTINS_PIR := \
+  src/builtins/builtins.pir
+
+DOCS := README
+
+BUILD_CLEANUPS := \
+  punie.pbc \
+  "src/gen_*.pir" \
+  "*.c" \
+  "*$(O)" \
+  punie@exe@ \
+#IF(win32):  parrot-punie.exe \
+#IF(win32):  parrot-punie.iss \
+#IF(win32):  "setup-parrot-*.exe" \
+  installable_punie@exe@
+
+TEST_CLEANUPS := \
+  "t/*.p1" \
+  "t/*.out" \
+  "t/*.pir"
+
+build: punie.pbc
+
+all: build punie@exe@ installable
+
+punie.pbc: $(SOURCES)
+	$(PARROT) $(PARROT_ARGS) -o punie.pbc punie.pir
+
+punie@exe@: punie.pbc
+	$(PBC_TO_EXE) punie.pbc
+
+src/gen_grammar.pir: $(PERL6GRAMMAR) src/parser/grammar.pg
+	$(PARROT) $(PARROT_ARGS) $(PERL6GRAMMAR) \
+	    --output=src/gen_grammar.pir \
+	    src/parser/grammar.pg
+
+src/gen_actions.pir: $(NQP) src/parser/actions.pm
+	$(PARROT) $(PARROT_ARGS) $(NQP) --output=src/gen_actions.pir \
+	    --target=pir src/parser/actions.pm
+
+src/gen_builtins.pir: $(BUILTINS_PIR)
+	$(CAT) $(BUILTINS_PIR) > src/gen_builtins.pir
+
+installable: installable_punie@exe@
+
+installable_punie@exe@: punie.pbc
+	$(PBC_TO_EXE) punie.pbc --install
+
+Makefile: config/makefiles/root.in
+	$(PERL) Configure.pl
 
 # This is a listing of all targets, that are meant to be called by users
 help:
 	@echo ""
 	@echo "Following targets are available for the user:"
 	@echo ""
-	@echo "  all:               punie.pbc"
+	@echo "  build:             punie.pbc"
 	@echo "                     This is the default."
+	@echo "  punie@exe@          Self-hosting binary not to be installed."
+	@echo "  all:               punie.pbc punie@exe@ installable"
+	@echo "  installable:       Create libs and self-hosting binaries to be installed."
+	@echo "  install:           Install the installable targets and docs."
+	@echo ""
 	@echo "Testing:"
 	@echo "  test:              Run the test suite."
+	@echo "  test-installable:  Test self-hosting targets."
 	@echo "  testclean:         Clean up test results."
 	@echo ""
 	@echo "Cleaning:"
@@ -52,26 +120,46 @@ help:
 	@echo "  help:              Print this help message."
 	@echo ""
 
-test: all
+test: build
 	$(PERL) -Ilib -I../../lib t/harness
 
-# regenerate the Makefile
-Makefile: config/makefiles/root.in
-	cd $(BUILD_DIR) && $(RECONFIGURE) --step=gen::languages --languages=punie
+# basic run for missing libs
+test-installable: installable
+	echo "print 1;" | ./installable_punie@exe@
+
+install: installable
+	$(CP) installable_punie@exe@ $(BIN_DIR)/parrot-punie@exe@
+	$(CHMOD) 0755 $(BIN_DIR)/parrot-punie@exe@
+	-$(MKPATH) $(LIB_DIR)/languages/punie
+	$(CP) punie.pbc $(LIB_DIR)/languages/punie/punie.pbc
+	-$(MKPATH) $(MANDIR)/man1
+	$(POD2MAN) punie.pir > $(MANDIR)/man1/parrot-punie.1
+	-$(MKPATH) $(DOC_DIR)/languages/punie
+	$(CP) $(DOCS) $(DOC_DIR)/languages/punie
+
+uninstall:
+	$(RM_F) $(BIN_DIR)/parrot-punie@exe@
+	$(RM_RF) $(LIB_DIR)/languages/punie
+	$(RM_F) $(MANDIR)/man1/parrot-punie.1
+	$(RM_RF) $(DOC_DIR)/languages/punie
+
+win32-inno-installer: installable
+	-$(MKPATH) man/man1
+	$(POD2MAN) punie.pir > man/man1/parrot-punie.1
+	-$(MKPATH) man/html
+	pod2html --infile punie.pir --outfile man/html/parrot-punie.html
+	$(CP) installable_punie@exe@ parrot-punie.exe
+	$(PERL) $(LIB_DIR)/tools/dev/mk_inno_language.pl punie
+	iscc parrot-punie.iss
 
 testclean:
-	$(RM_F) "t/*.p1" "t/*.out" "t/*.pir"
+	$(RM_F) $(TEST_CLEANUPS)
 
-CLEANUPS = \
-  punie.pbc \
-  src/gen_punie.pir \
-  src/gen_punie-actions.pir \
+clean:
+	$(RM_F) $(TEST_CLEANUPS) $(BUILD_CLEANUPS)
 
-clean: testclean
-	$(RM_F) $(CLEANUPS)
-
-realclean: clean
-	$(RM_F) Makefile
+realclean:
+	$(RM_F) $(TEST_CLEANUPS) $(BUILD_CLEANUPS) Makefile
 
 distclean: realclean
 
@@ -79,3 +167,4 @@ distclean: realclean
 #   mode: makefile
 # End:
 # vim: ft=make:
+
