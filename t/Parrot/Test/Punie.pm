@@ -1,4 +1,4 @@
-# $Id: Punie.pm 37201 2009-03-08 12:07:48Z fperrad $
+# $Id$
 
 # Copyright (C) 2005-2007, Parrot Foundation.
 
