@@ -121,7 +121,7 @@ help:
 	@echo ""
 
 test: build
-	$(PERL) -Ilib -I../../lib t/harness
+	$(PERL) -I$(LIB_DIR)/tools/lib t/harness
 
 # basic run for missing libs
 test-installable: installable
